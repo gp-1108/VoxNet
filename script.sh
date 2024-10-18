@@ -13,7 +13,7 @@ gdrive_sif_id=1H6Z9euw7WWRPUz8XGMHPtrgH8cNlt31H
 export PATH="$PATH:$(python3 -m site --user-base)/bin"
 
 # Clean up the dataset directory before downloading
-rm -rf $dataset_path $dataset_archive
+rm -rf $dataset_path $dataset_archive $dataset_output
 
 # Download the dataset
 wget $url -O $dataset_archive
@@ -24,7 +24,7 @@ unzip -q $dataset_archive -d /ext
 
 # Run the script
 cd $project_dir
-singularity exec --bind /ext:/ext $sif_image_path python3 dataset_converter.py --input_dir $dataset_path --output_dir $dataset_output --pitch 32 --num_workers 1
+singularity exec --bind /ext:/ext $sif_image_path python3 dataset_converter.py --input_dir $dataset_path --output_dir $dataset_output --num_workers 3
 
 # Zip the dataset and save it
 zip -r $save_path $dataset_output
