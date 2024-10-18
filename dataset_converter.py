@@ -118,7 +118,7 @@ def parse_args():
 
     return parser.parse_args()
 
-def process_with_timeout(pool, paths, timeout=5):
+def process_with_timeout(pool, paths, timeout=300):
     """
     Process files with a timeout.
 
