@@ -4,10 +4,42 @@ from scipy.ndimage import zoom
 import zstandard as zstd
 import pickle
 import os
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool, cpu_count, Queue, current_process, TimeoutError
 import argparse
 import logging
-from logger import Logger
+import logging.handlers
+import threading
+import time
+
+class QueueLogger:
+    """
+    Logger class to handle multiprocessing logging using a queue.
+    """
+    def __init__(self, log_file_path):
+        self.queue = Queue()
+        self.log_file_path = log_file_path
+        self.listener_thread = threading.Thread(target=self._listener, daemon=True)
+        self.listener_thread.start()
+
+    def _listener(self):
+        with open(self.log_file_path, 'a') as f:
+            while True:
+                record = self.queue.get()
+                if record is None:
+                    break
+                f.write(record + '\n')
+                f.flush()
+
+    def log(self, level, message):
+        pid = current_process().pid
+        record = f"PID {pid} [{level}]: {message}"
+        self.queue.put(record)
+
+    def close(self):
+        self.queue.put(None)
+        self.listener_thread.join()
+
+logger = None
 
 def compress_off_to_zst(off_file_path, zst_output_path, pitch=0.6, target_shape=(32, 32, 32), compression_level=22):
     """
@@ -20,7 +52,6 @@ def compress_off_to_zst(off_file_path, zst_output_path, pitch=0.6, target_shape=
     - target_shape (tuple of ints): The desired shape for the voxel grid after rescaling. Default is (32, 32, 32).
     - compression_level (int): The compression level for Zstandard. Default is 22.
     """
-
     try:
         # Load the .off file
         mesh = trimesh.load_mesh(off_file_path)
@@ -47,10 +78,10 @@ def compress_off_to_zst(off_file_path, zst_output_path, pitch=0.6, target_shape=
         with open(zst_output_path, 'wb') as f:
             f.write(cctx.compress(pickle.dumps(rescaled_voxel_grid)))
 
-        logging.info(f"Successfully processed: {off_file_path}")
+        logger.log('INFO', f"Successfully processed: {off_file_path}")
 
     except Exception as e:
-        logging.error(f"Failed to process {off_file_path}: {e}")
+        logger.log('ERROR', f"Failed to process {off_file_path}: {e}")
         return off_file_path  # Return the path of the failed file
 
 def load_paths(folder_path, output_path):
@@ -87,9 +118,31 @@ def parse_args():
 
     return parser.parse_args()
 
+def process_with_timeout(pool, paths, timeout=5):
+    """
+    Process files with a timeout.
+
+    Parameters:
+    - pool (multiprocessing.Pool): The multiprocessing pool.
+    - paths (list of tuples): List of paths to process.
+    - timeout (int): Timeout in seconds for each process. Default is 300 seconds (5 minutes).
+    """
+    results = []
+    for path in paths:
+        result = pool.apply_async(process_file, (path,))
+        try:
+            results.append(result.get(timeout=timeout))
+        except TimeoutError:
+            logger.log('ERROR', f"Processing timed out for: {path[0]}")
+            results.append(path[0])  # Mark the file as failed
+    return results
+
 if __name__ == '__main__':
     # Parse command line arguments
     args = parse_args()
+
+    # Set up logging
+    logger = QueueLogger("process.log")
 
     # Load all paths for .off files in the input directory
     input_paths, output_paths = load_paths(args.input_dir, args.output_dir)
@@ -99,13 +152,16 @@ if __name__ == '__main__':
 
     # Set up a multiprocessing Pool
     with Pool(processes=args.num_workers) as pool:
-        # Map the paths to the processing function
-        failed_files = pool.map(process_file, paths)
+        # Process files with timeout handling
+        failed_files = process_with_timeout(pool, paths)
 
     # Filter out None values (successful files) from failed_files list
     failed_files = [f for f in failed_files if f]
 
     if failed_files:
-        logging.error(f"{len(failed_files)} files failed to process. Failed files: {failed_files}")
+        logger.log('ERROR', f"{len(failed_files)} files failed to process. Failed files: {failed_files}")
     else:
-        logging.info("All files processed successfully.")
+        logger.log('INFO', "All files processed successfully.")
+
+    # Close the logger
+    logger.close()
