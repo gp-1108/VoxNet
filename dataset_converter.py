@@ -1,6 +1,7 @@
 import numpy as np
 import trimesh
 from scipy.ndimage import zoom
+from scipy.ndimage import binary_fill_holes
 import zstandard as zstd
 import pickle
 import os
@@ -32,7 +33,8 @@ class QueueLogger:
 
     def log(self, level, message):
         pid = current_process().pid
-        record = f"PID {pid} [{level}]: {message}"
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        record = f"{timestamp} PID {pid} [{level}]: {message}"
         self.queue.put(record)
 
     def close(self):
@@ -41,48 +43,119 @@ class QueueLogger:
 
 logger = None
 
-def compress_off_to_zst(off_file_path, zst_output_path, pitch=0.6, target_shape=(32, 32, 32), compression_level=22):
-    """
-    Load a .off file, voxelize it, rescale it, and save it as a compressed .zst file.
+def load_off(file_path):
+    with open(file_path, 'r') as file:
+        lines = file.readlines()
 
-    Parameters:
-    - off_file_path (str): The path to the input .off file.
-    - zst_output_path (str): The path to save the compressed .zst file.
-    - pitch (float): The pitch (resolution) for voxelization. Default is 0.6.
-    - target_shape (tuple of ints): The desired shape for the voxel grid after rescaling. Default is (32, 32, 32).
-    - compression_level (int): The compression level for Zstandard. Default is 22.
-    """
-    try:
-        # Load the .off file
-        mesh = trimesh.load_mesh(off_file_path)
+    # Ensure it's an OFF file
+    assert lines[0].strip() == 'OFF', "The file is not an OFF file."
 
-        # Voxelize the mesh
-        voxelized = mesh.voxelized(pitch=pitch)
-        solid_voxels = voxelized.fill()
+    # Get number of vertices and faces
+    parts = lines[1].strip().split()
+    num_vertices = int(parts[0])
+    num_faces = int(parts[1])
 
-        # Convert the voxel grid to a numpy array (3D)
-        voxel_grid = solid_voxels.matrix
+    # Read vertices
+    vertices = []
+    for i in range(2, 2 + num_vertices):
+        vertex = list(map(float, lines[i].strip().split()))
+        vertices.append(vertex)
 
-        # Calculate scaling factors
-        scaling_factors = np.array(target_shape) / np.array(voxel_grid.shape)
+    # Read faces
+    faces = []
+    for i in range(2 + num_vertices, 2 + num_vertices + num_faces):
+        face = list(map(int, lines[i].strip().split()[1:]))  # Skip the first number (face size)
+        faces.append(face)
 
-        # Rescale the voxel grid to the desired shape
-        rescaled_voxel_grid = zoom(voxel_grid, zoom=scaling_factors, order=0)
+    vertices = np.array(vertices)
+    faces = np.array(faces)
+    
+    return vertices, faces
 
-        # Convert rescaled voxel grid to binary (0 or 1)
-        rescaled_voxel_grid = (rescaled_voxel_grid > 0).astype(np.int8)
+def voxelize_fill_volume(vertices, faces, resolution=32):
+    # Get the bounding box of the mesh
+    min_bounds = np.min(vertices, axis=0)
+    max_bounds = np.max(vertices, axis=0)
+    bounds_size = max_bounds - min_bounds
 
-        # Serialize and compress the voxel grid
-        cctx = zstd.ZstdCompressor(level=compression_level)
-        os.makedirs(os.path.dirname(zst_output_path), exist_ok=True)  # Ensure output directory exists
-        with open(zst_output_path, 'wb') as f:
-            f.write(cctx.compress(pickle.dumps(rescaled_voxel_grid)))
+    # Calculate scaling factor to fit the object inside the voxel grid without distorting proportions
+    max_extent = np.max(bounds_size)
+    scale_factors = resolution / max_extent
 
-        logger.log('INFO', f"Successfully processed: {off_file_path}")
+    # Create an empty voxel grid
+    voxel_grid = np.zeros((resolution, resolution, resolution), dtype=bool)
 
-    except Exception as e:
-        logger.log('ERROR', f"Failed to process {off_file_path}: {e}")
-        return off_file_path  # Return the path of the failed file
+    # Loop over faces and mark surface voxels
+    for face in faces:
+        triangle = vertices[face]  # Get the vertices of the triangle
+
+        # Scale the vertices according to their original proportions
+        scaled_triangle = (triangle - min_bounds) * scale_factors
+
+        # Find the min and max coordinates of the scaled triangle
+        tri_min_vox = np.floor(np.min(scaled_triangle, axis=0)).astype(int)
+        tri_max_vox = np.ceil(np.max(scaled_triangle, axis=0)).astype(int)
+
+        # Clamp the values to the grid size
+        tri_min_vox = np.clip(tri_min_vox, 0, resolution - 1)
+        tri_max_vox = np.clip(tri_max_vox, 0, resolution - 1)
+
+        # Fill the voxel grid for each triangle within its bounding box (surface only)
+        voxel_grid[tri_min_vox[0]:tri_max_vox[0]+1, 
+                   tri_min_vox[1]:tri_max_vox[1]+1, 
+                   tri_min_vox[2]:tri_max_vox[2]+1] = True
+    return voxel_grid
+
+def fill_volume(voxel_grid):
+    # Fill the volume by treating the surface as boundaries
+    filled_grid = binary_fill_holes(voxel_grid).astype(bool)
+    return filled_grid
+
+
+def fit_voxel_grid(voxel_grid, n):
+    # Get the current resolution of the input voxel grid
+    current_resolution = max(voxel_grid.shape)
+
+    # Create an empty voxel grid with new resolution (n x n x n)
+    new_voxel_grid = np.zeros((n, n, n), dtype=bool)
+
+    # Calculate the scaling factor to fit the current grid into the new grid
+    scale_factor = n / current_resolution
+
+    # Loop over each filled voxel in the original grid and map it to the new grid
+    filled_voxels = np.argwhere(voxel_grid)
+    for voxel in filled_voxels:
+        new_voxel = np.floor(voxel * scale_factor).astype(int)
+        new_voxel = np.clip(new_voxel, 0, n - 1)
+        new_voxel_grid[new_voxel[0], new_voxel[1], new_voxel[2]] = True
+
+    return new_voxel_grid
+
+
+def set_axes_equal(ax):
+    """Set equal scaling for 3D axes."""
+    extents = np.array([getattr(ax, f'get_{axis}lim')() for axis in 'xyz'])
+    centers = np.mean(extents, axis=1)
+    max_range = np.ptp(extents, axis=1).max() / 2
+
+    for ctr, axis in zip(centers, 'xyz'):
+        getattr(ax, f'set_{axis}lim')(ctr - max_range, ctr + max_range)
+
+
+def from_off_to_voxel(off_file_path, resolution=64, target_shape=32, compression_level=22, zst_output_path=None):
+    # Load and voxelize the mesh
+    vertices, faces = load_off(off_file_path)
+    surface_voxel_grid = voxelize_fill_volume(vertices, faces, resolution=resolution)
+
+    # Fill the volume
+    filled_voxel_grid = fill_volume(surface_voxel_grid)
+    filled_voxel_grid = fit_voxel_grid(filled_voxel_grid, n=target_shape)
+    # Serialize and compress the voxel grid
+    cctx = zstd.ZstdCompressor(level=compression_level)
+    os.makedirs(os.path.dirname(zst_output_path), exist_ok=True)  # Ensure output directory exists
+    with open(zst_output_path, 'wb') as f:
+        f.write(cctx.compress(pickle.dumps(filled_voxel_grid)))
+
 
 def load_paths(folder_path, output_path):
     """
@@ -98,10 +171,10 @@ def load_paths(folder_path, output_path):
                 output_paths.append(os.path.join(output_path, root[len(folder_path)+1:], file[:-4] + ".zst"))
     return input_paths, output_paths
 
-def process_file(paths):
+def process_file(paths, resolution, target_shape, compression_level):
     """ Helper function to compress an .off file to .zst. """
     off_file_path, zst_output_path = paths
-    return compress_off_to_zst(off_file_path, zst_output_path)
+    return from_off_to_voxel(off_file_path, resolution, target_shape, compression_level, zst_output_path)
 
 def parse_args():
     """
@@ -111,14 +184,14 @@ def parse_args():
     
     parser.add_argument('--input_dir', type=str, required=True, help="Path to the input directory containing .off files.")
     parser.add_argument('--output_dir', type=str, required=True, help="Path to the output directory where .zst files will be saved.")
-    parser.add_argument('--pitch', type=float, default=0.6, help="The pitch (resolution) for voxelization. Default is 0.6.")
-    parser.add_argument('--target_shape', type=int, nargs=3, default=(32, 32, 32), help="The desired shape for the voxel grid after rescaling. Default is (32, 32, 32).")
+    parser.add_argument('--resolution', type=int, default=64, help="The resolution for voxelization. Default is 64.")
+    parser.add_argument('--target_size', type=int, default=32, help="The desired shape for the voxel grid after rescaling. Default is 32")
     parser.add_argument('--compression_level', type=int, default=22, help="The compression level for Zstandard. Default is 22.")
     parser.add_argument('--num_workers', type=int, default=cpu_count(), help="Number of parallel processes. Default is the number of CPU cores.")
 
     return parser.parse_args()
 
-def process_with_timeout(pool, paths, timeout=300):
+def process_with_timeout(pool, paths, resolution, target_shape, compression_level, timeout=300):
     """
     Process files with a timeout.
 
@@ -129,9 +202,11 @@ def process_with_timeout(pool, paths, timeout=300):
     """
     results = []
     for path in paths:
-        result = pool.apply_async(process_file, (path,))
+        result = pool.apply_async(process_file, (path, resolution, target_shape, compression_level))
         try:
+            logger.log('INFO', f"Processing {path[0]}")
             results.append(result.get(timeout=timeout))
+            logger.log('INFO', f"Processing {path[0]}")
         except TimeoutError:
             logger.log('ERROR', f"Processing timed out for: {path[0]}")
             results.append(path[0])  # Mark the file as failed
@@ -153,7 +228,7 @@ if __name__ == '__main__':
     # Set up a multiprocessing Pool
     with Pool(processes=args.num_workers) as pool:
         # Process files with timeout handling
-        failed_files = process_with_timeout(pool, paths)
+        failed_files = process_with_timeout(pool, paths, args.resolution, args.target_size, args.compression_level)
 
     # Filter out None values (successful files) from failed_files list
     failed_files = [f for f in failed_files if f]
