@@ -7,7 +7,7 @@ dataset_path="${ext_path}/ModelNet40Voxel"
 model_output="${project_dir}/model.pth"
 exec_script="${project_dir}/training/train.py"
 sif_image_path=/ext/sif_image.sif
-gdrive_sif_id=todo
+gdrive_sif_id=1EWJgE21TCu4XLUSFvixb6QsrOl0-_8Pc
 gdrive_dataset_id=1Pjlcpcxsp1EtS60UG0DFgGqJ3xfycF0_
 
 export PATH="$PATH:$(python3 -m site --user-base)/bin"
