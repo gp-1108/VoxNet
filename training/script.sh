@@ -29,7 +29,7 @@ lr=0.001
 
 # Run the script
 cd $project_dir
-singularity exec --no-home -B $ext_path -B $project_dir $sif_image_path \
+singularity exec --nv --no-home -B $ext_path -B $project_dir $sif_image_path \
     python3 $exec_script \
     --dataset_path $dataset_path \
     --output_path $model_output \
