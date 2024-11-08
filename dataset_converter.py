@@ -47,29 +47,41 @@ def load_off(file_path):
     with open(file_path, 'r') as file:
         lines = file.readlines()
 
-    # Ensure it's an OFF file
-    assert lines[0].strip() == 'OFF', "The file is not an OFF file."
-
-    # Get number of vertices and faces
-    parts = lines[1].strip().split()
-    num_vertices = int(parts[0])
-    num_faces = int(parts[1])
+    # Check the first line for 'OFF'
+    if lines[0].startswith('OFF'):
+        # Split off any numbers following 'OFF' on the same line
+        parts = lines[0][3:].strip()
+        
+        # If there are additional numbers after 'OFF' on the first line, split them
+        if parts:
+            parts = parts.split()
+            num_vertices = int(parts[0])
+            num_faces = int(parts[1])
+            data_start_line = 1  # Start reading vertices from the next line
+        else:
+            # If 'OFF' is alone, get the data from the next line
+            parts = lines[1].strip().split()
+            num_vertices = int(parts[0])
+            num_faces = int(parts[1])
+            data_start_line = 2  # Start reading vertices two lines down
+    else:
+        raise ValueError("The file does not start with 'OFF' as expected.")
 
     # Read vertices
     vertices = []
-    for i in range(2, 2 + num_vertices):
+    for i in range(data_start_line, data_start_line + num_vertices):
         vertex = list(map(float, lines[i].strip().split()))
         vertices.append(vertex)
 
     # Read faces
     faces = []
-    for i in range(2 + num_vertices, 2 + num_vertices + num_faces):
+    for i in range(data_start_line + num_vertices, data_start_line + num_vertices + num_faces):
         face = list(map(int, lines[i].strip().split()[1:]))  # Skip the first number (face size)
         faces.append(face)
 
     vertices = np.array(vertices)
     faces = np.array(faces)
-    
+
     return vertices, faces
 
 def voxelize_fill_volume(vertices, faces, resolution=32):
@@ -101,8 +113,8 @@ def voxelize_fill_volume(vertices, faces, resolution=32):
         tri_max_vox = np.clip(tri_max_vox, 0, resolution - 1)
 
         # Fill the voxel grid for each triangle within its bounding box (surface only)
-        voxel_grid[tri_min_vox[0]:tri_max_vox[0]+1, 
-                   tri_min_vox[1]:tri_max_vox[1]+1, 
+        voxel_grid[tri_min_vox[0]:tri_max_vox[0]+1,
+                   tri_min_vox[1]:tri_max_vox[1]+1,
                    tri_min_vox[2]:tri_max_vox[2]+1] = True
     return voxel_grid
 
@@ -155,6 +167,7 @@ def from_off_to_voxel(off_file_path, resolution=64, target_shape=32, compression
     os.makedirs(os.path.dirname(zst_output_path), exist_ok=True)  # Ensure output directory exists
     with open(zst_output_path, 'wb') as f:
         f.write(cctx.compress(pickle.dumps(filled_voxel_grid)))
+    return True
 
 
 def load_paths(folder_path, output_path):
@@ -174,14 +187,19 @@ def load_paths(folder_path, output_path):
 def process_file(paths, resolution, target_shape, compression_level):
     """ Helper function to compress an .off file to .zst. """
     off_file_path, zst_output_path = paths
-    return from_off_to_voxel(off_file_path, resolution, target_shape, compression_level, zst_output_path)
+    try:
+        return from_off_to_voxel(off_file_path, resolution, target_shape, compression_level, zst_output_path)
+    except Exception as e:
+        logger.log('ERROR', f"{off_file_path} failed with error: {e}")
+        return False  # Signal failure without crashing the pool
+
 
 def parse_args():
     """
     Parse command line arguments.
     """
     parser = argparse.ArgumentParser(description="Compress .off files to .zst format with voxelization.")
-    
+
     parser.add_argument('--input_dir', type=str, required=True, help="Path to the input directory containing .off files.")
     parser.add_argument('--output_dir', type=str, required=True, help="Path to the output directory where .zst files will be saved.")
     parser.add_argument('--resolution', type=int, default=64, help="The resolution for voxelization. Default is 64.")
@@ -205,8 +223,12 @@ def process_with_timeout(pool, paths, resolution, target_shape, compression_leve
         result = pool.apply_async(process_file, (path, resolution, target_shape, compression_level))
         try:
             logger.log('INFO', f"Processing {path[0]}")
-            results.append(result.get(timeout=timeout))
-            logger.log('INFO', f"Processing {path[0]}")
+            is_good = result.get(timeout=timeout)
+            if is_good:
+                logger.log("INFO", f"Successfully Processed {path[0]}")
+            else:
+                logger.log("ERROR", f"Failed to Process {path[0]}")
+                results.append(path[0])
         except TimeoutError:
             logger.log('ERROR', f"Processing timed out for: {path[0]}")
             results.append(path[0])  # Mark the file as failed
