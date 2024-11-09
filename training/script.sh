@@ -26,6 +26,7 @@ unzip -q $dataset_archive -d /ext
 batch_size=64
 epochs=100
 lr=0.001
+folds=6
 
 # Run the script
 cd $project_dir
@@ -35,7 +36,8 @@ singularity exec --nv --no-home -B $ext_path -B $project_dir $sif_image_path \
     --output_path $model_output \
     --batch_size $batch_size \
     --learning_rate $lr \
-    --num_epochs $epochs
+    --num_epochs $epochs \
+    --k_folds $folds
 
 # Zip the dataset and save it
 zip -r $save_path $dataset_output

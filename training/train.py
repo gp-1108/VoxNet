@@ -25,7 +25,7 @@ def main(args):
         loss_fn=loss_fn,
         output_path=args.output_path,
         device=device,
-        k_folds=2,
+        k_folds=args.k_folds,
     )
 
     # Train the model
@@ -39,6 +39,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=4, help="Batch size for training")
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate for the optimizer")
     parser.add_argument("--num_epochs", type=int, default=1, help="Number of epochs to train")
+    parser.add_argument("--k_folds", type=int, default=5, help="Number of folds for k-fold cross-validation")
 
     args = parser.parse_args()
     main(args)
