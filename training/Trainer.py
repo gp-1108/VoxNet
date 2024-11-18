@@ -12,9 +12,11 @@ class Trainer:
                  loss_fn,
                  device=None,
                  output_path="model.pth",
-                 k_folds=5):
+                 k_folds=5,
+                 early_stopping_patience=5):
         """
         Initializes the trainer with model, dataset, test data loader, optimizer, loss function, device, and k-folds.
+        Adds early stopping with a specified patience.
         """
         self.model = model
         self.train_dataset = train_dataset
@@ -25,10 +27,11 @@ class Trainer:
         self.model.to(self.device)
         self.k_folds = k_folds
         self.output_path = output_path
+        self.early_stopping_patience = early_stopping_patience
 
     def train(self, num_epochs, batch_size=32, log_interval=10):
         """
-        Main training loop using k-fold cross-validation.
+        Main training loop using k-fold cross-validation with early stopping.
         """
         kfold = KFold(n_splits=self.k_folds, shuffle=True)
         test_loader = DataLoader(self.test_dataset, batch_size=batch_size, shuffle=False)
@@ -42,6 +45,9 @@ class Trainer:
             train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True)
             val_loader = DataLoader(val_subset, batch_size=batch_size, shuffle=False)
 
+            best_val_loss = float('inf')
+            patience_counter = 0
+
             for epoch in range(1, num_epochs + 1):
                 start_time = time.time()
                 train_loss, train_accuracy = self._train_one_epoch(train_loader, epoch, log_interval)
@@ -53,14 +59,25 @@ class Trainer:
                       f"Train Loss: {train_loss:.4f}, Train Acc: {train_accuracy:.2f}% - "
                       f"Val Loss: {val_loss:.4f}, Val Acc: {val_accuracy:.2f}%")
 
+                # Check for early stopping
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                    # Save the best model so far
+                    torch.save(self.model.state_dict(), self.output_path)
+                    print(f"New best model saved at epoch {epoch} with validation loss {val_loss:.4f}")
+                else:
+                    patience_counter += 1
+                    print(f"Early stopping patience counter: {patience_counter}/{self.early_stopping_patience}")
+
+                if patience_counter >= self.early_stopping_patience:
+                    print(f"Stopping early at epoch {epoch} due to no improvement in validation loss.")
+                    break
+
         # Evaluate on the test set after training on all folds
-        print("Evaluating on test set...")
+        print(f"Evaluating {self.output_path} on test set...")
         test_loss, test_accuracy = self._validate(test_loader, final_test=True)
         print(f"Final Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
-
-        # Save the model
-        torch.save(self.model.state_dict(), self.output_path)
-        print(f"Model saved to {self.output_path}")
 
     def _train_one_epoch(self, train_loader, epoch, log_interval):
         """
@@ -95,7 +112,7 @@ class Trainer:
 
     def _validate(self, data_loader, epoch=None, final_test=False):
         """
-        Validates the model and returns the average loss and accuracy. 
+        Validates the model and returns the average loss and accuracy.
         """
         self.model.eval()
         running_loss = 0.0

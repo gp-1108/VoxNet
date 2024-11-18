@@ -35,7 +35,8 @@ class ModelNet40Dataset(Dataset):
                 for fname in sorted(fnames):
                     if fname.endswith('.zst'):
                         path = os.path.join(root, fname)
-                        item = (path, self.class_to_idx[class_name])
+                        obj = self.deserialize_and_decompress(path)
+                        item = (obj, self.class_to_idx[class_name])
                         samples.append(item)
         return samples
 
@@ -43,8 +44,7 @@ class ModelNet40Dataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx):
-        path, target = self.samples[idx]
-        voxel_grid = self.deserialize_and_decompress(path)
+        voxel_grid, target = self.samples[idx]
 
         if self.transform is not None:
             voxel_grid = self.transform(voxel_grid)
@@ -69,3 +69,24 @@ class ModelNet40Dataset(Dataset):
     
     def get_class_mapping(self):
         return self.class_to_idx
+    
+    def augment_voxel_grid(self, mode):
+        if "v_rotate" in mode:
+            for i in range(len(self.samples)):
+                voxel_grid, target = self.samples[i]
+                rotated_grids = self.create_rotated_voxel_grids(voxel_grid)
+                for rotated_grid in rotated_grids:
+                    self.samples.append((rotated_grid, target))
+    
+    @staticmethod
+    def create_rotated_voxel_grids(voxel_grid):
+        """
+        Creates rotated versions of the given voxel grid.
+        The grid is rotated by 90 degrees around the vertical axis.
+        As an example a chair would be rotated from left to right, not upside down.
+        """
+        rotated_grids = []
+        for i in range(3):
+            rotated_grid = np.rot90(voxel_grid, i, axes=(1, 2))
+            rotated_grids.append(rotated_grid)
+        return rotated_grids
