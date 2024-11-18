@@ -72,11 +72,13 @@ class ModelNet40Dataset(Dataset):
     
     def augment_voxel_grid(self, mode):
         if "v_rotate" in mode:
+            augmented_samples = []
             for i in range(len(self.samples)):
                 voxel_grid, target = self.samples[i]
                 rotated_grids = self.create_rotated_voxel_grids(voxel_grid)
-                for rotated_grid in rotated_grids:
-                    self.samples.append((rotated_grid, target))
+                augmented_samples.extend((rotated_grid, target) for rotated_grid in rotated_grids)
+            self.samples.extend(augmented_samples)
+
     
     @staticmethod
     def create_rotated_voxel_grids(voxel_grid):
@@ -87,6 +89,6 @@ class ModelNet40Dataset(Dataset):
         """
         rotated_grids = []
         for i in range(3):
-            rotated_grid = np.rot90(voxel_grid, i, axes=(1, 2))
+            rotated_grid = np.rot90(voxel_grid, i, axes=(1, 2)).copy()
             rotated_grids.append(rotated_grid)
         return rotated_grids
