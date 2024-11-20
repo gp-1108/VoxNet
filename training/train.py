@@ -40,10 +40,10 @@ def run_experiment(dataset_path, output_path, config):
         # Update model name to include model type
         current_config = config.copy()
         model_name = current_config["model_name"]
-        current_config["model_name"] = model_name.replace('.pth', f'_{model_type}.pth')
+        current_config["model_name"] = model_type + "_" + current_config["model_name"]
 
         # Initialize model
-        model = model_class(n_classes, 32)
+        model = model_class(n_classes)
 
         # Initialize optimizer and loss function
         optimizer = get_instance(
