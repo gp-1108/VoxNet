@@ -116,7 +116,7 @@ def main(args):
         {
             "model_name": "k3fold_epoch50_es_SGD-3_celoss_b128_vrotation.pth",
             "batch_size": 128,
-            "num_epochs": 50,
+            "num_epochs": 200,
             "k_folds": 3,
             "optimizer": {
                 "name": "SGD",
@@ -133,7 +133,7 @@ def main(args):
         {
             "model_name": "k3fold_epoch50_es_SGD-3_celoss_b128.pth",
             "batch_size": 128,
-            "num_epochs": 50,
+            "num_epochs": 200,
             "k_folds": 3,
             "optimizer": {
                 "name": "SGD",
