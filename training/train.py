@@ -2,7 +2,7 @@ import os
 import argparse
 import torch
 from Dataset import ModelNet40Dataset
-from BaseModel import BaseVoxNet
+from models import BaseVoxNet, BatchNormVoxNet, ResVoxNet, ResBNVoxNet
 from Trainer import Trainer
 
 def get_instance(class_name, module, **kwargs):
@@ -28,37 +28,54 @@ def run_experiment(dataset_path, output_path, config):
 
     # Initialize model
     n_classes = len(train_dataset.get_class_mapping())
-    model = BaseVoxNet(n_classes, 32)
+    # Test each model type
+    model_types = {
+        'base': BaseVoxNet,
+        'batchnorm': BatchNormVoxNet,
+        'res': ResVoxNet,
+        'resbn': ResBNVoxNet,
+    }
 
-    # Initialize optimizer and loss function
-    optimizer = get_instance(
-        config["optimizer"]["name"],
-        torch.optim,
-        params=model.parameters(),
-        **config["optimizer"]["params"]
-    )
-    loss_fn = get_instance(
-        config["loss"]["name"],
-        torch.nn,
-        **config["loss"].get("params", {})
-    )
+    for model_type, model_class in model_types.items():
+        # Update model name to include model type
+        current_config = config.copy()
+        model_name = current_config["model_name"]
+        current_config["model_name"] = model_name.replace('.pth', f'_{model_type}.pth')
 
-    # Define device and Trainer
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    output_model_path = os.path.join(output_path, config["model_name"])
-    trainer = Trainer(
-        model=model,
-        train_dataset=train_dataset,
-        test_dataset=test_dataset,
-        optimizer=optimizer,
-        loss_fn=loss_fn,
-        output_path=output_model_path,
-        device=device,
-        k_folds=config["k_folds"],
-    )
+        # Initialize model
+        model = model_class(n_classes, 32)
 
-    # Train the model
-    trainer.train(num_epochs=config["num_epochs"], batch_size=config["batch_size"], log_interval=50)
+        # Initialize optimizer and loss function
+        optimizer = get_instance(
+            current_config["optimizer"]["name"],
+            torch.optim,
+            params=model.parameters(),
+            **current_config["optimizer"]["params"]
+        )
+        loss_fn = get_instance(
+            current_config["loss"]["name"],
+            torch.nn,
+            **current_config["loss"].get("params", {})
+        )
+
+        # Define device and Trainer
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        output_model_path = os.path.join(output_path, current_config["model_name"])
+        trainer = Trainer(
+            model=model,
+            train_dataset=train_dataset,
+            test_dataset=test_dataset,
+            optimizer=optimizer,
+            loss_fn=loss_fn,
+            output_path=output_model_path,
+            device=device,
+            k_folds=current_config["k_folds"],
+        )
+
+        # Train the model
+        trainer.train(num_epochs=current_config["num_epochs"], 
+                     batch_size=current_config["batch_size"], 
+                     log_interval=50)
 
 def main(args):
     # Experiment configurations
