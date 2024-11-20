@@ -4,9 +4,9 @@ project_dir=/home/gp1108/Code/VoxNet
 ext_path=/ext
 dataset_archive="${ext_path}/ModelNet40Voxel.zip"
 dataset_path="${ext_path}/ModelNet40Voxel"
-model_output="${project_dir}/models"
+model_output="${project_dir}/saved_models"
 exec_script="${project_dir}/training/train.py"
-sif_image_path=/ext/sif_image.sif
+sif_image_path="${ext_path}/sif_image.sif"
 gdrive_sif_id=1EWJgE21TCu4XLUSFvixb6QsrOl0-_8Pc
 gdrive_dataset_id=1Pjlcpcxsp1EtS60UG0DFgGqJ3xfycF0_
 
