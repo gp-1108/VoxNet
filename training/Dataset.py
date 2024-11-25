@@ -78,17 +78,30 @@ class ModelNet40Dataset(Dataset):
                 rotated_grids = self.create_rotated_voxel_grids(voxel_grid)
                 augmented_samples.extend((rotated_grid, target) for rotated_grid in rotated_grids)
             self.samples.extend(augmented_samples)
+        elif "full_rotate" in mode:
+            augmented_samples = []
+            for i in range(len(self.samples)):
+                voxel_grid, target = self.samples[i]
+                rotated_grids = self.create_rotated_voxel_grids(voxel_grid, rotation_axes=[(1, 2), (2, 3), (1, 3)])
+                augmented_samples.extend((rotated_grid, target) for rotated_grid in rotated_grids)
+            self.samples.extend(augmented_samples)
 
     
     @staticmethod
-    def create_rotated_voxel_grids(voxel_grid):
+    def create_rotated_voxel_grids(voxel_grid, rotation_axes=[(1, 2)]):
         """
         Creates rotated versions of the given voxel grid.
-        The grid is rotated by 90 degrees around the vertical axis.
-        As an example a chair would be rotated from left to right, not upside down.
+        Args:
+            voxel_grid: Input voxel grid to rotate
+            rotation_axes: List of tuples specifying axes pairs for rotation
+                         e.g. [(1,2)] for vertical rotation only
+                              [(1,2), (2,3), (1,3)] for all possible rotations
+        Returns:
+            List of rotated voxel grids
         """
         rotated_grids = []
-        for i in range(3):
-            rotated_grid = np.rot90(voxel_grid, i, axes=(1, 2)).copy()
-            rotated_grids.append(rotated_grid)
+        for axes in rotation_axes:
+            for i in range(3):
+                rotated_grid = np.rot90(voxel_grid, i, axes=axes).copy()
+                rotated_grids.append(rotated_grid)
         return rotated_grids
