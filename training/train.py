@@ -1,4 +1,5 @@
 import os
+import itertools
 import argparse
 import torch
 from Dataset import ModelNet40Dataset
@@ -11,6 +12,19 @@ def get_instance(class_name, module, **kwargs):
     """
     cls = getattr(module, class_name)
     return cls(**kwargs)
+
+def generate_model_name(config, model_type):
+    """
+    Generate a descriptive model name based on parameters.
+    """
+    dataset_mode = config.get("dataset_mode", "none")
+    optimizer_name = config["optimizer"]["name"]
+    lr = config["optimizer"]["params"]["lr"]
+    loss_name = config["loss"]["name"]
+    batch_size = config["batch_size"]
+    num_epochs = config["num_epochs"]
+
+    return f"{model_type}_bs{batch_size}_epochs{num_epochs}_{optimizer_name}_lr{lr:.0e}_{loss_name}_{dataset_mode}.pth"
 
 def run_experiment(dataset_path, output_path, config):
     """
@@ -37,30 +51,28 @@ def run_experiment(dataset_path, output_path, config):
     }
 
     for model_type, model_class in model_types.items():
-        # Update model name to include model type
-        current_config = config.copy()
-        model_name = current_config["model_name"]
-        current_config["model_name"] = model_type + "_" + current_config["model_name"]
+        # Generate model name
+        model_name = generate_model_name(config, model_type)
 
         # Initialize model
         model = model_class(n_classes)
 
         # Initialize optimizer and loss function
         optimizer = get_instance(
-            current_config["optimizer"]["name"],
+            config["optimizer"]["name"],
             torch.optim,
             params=model.parameters(),
-            **current_config["optimizer"]["params"]
+            **config["optimizer"]["params"]
         )
         loss_fn = get_instance(
-            current_config["loss"]["name"],
+            config["loss"]["name"],
             torch.nn,
-            **current_config["loss"].get("params", {})
+            **config["loss"].get("params", {})
         )
 
         # Define device and Trainer
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        output_model_path = os.path.join(output_path, current_config["model_name"])
+        output_model_path = os.path.join(output_path, model_name)
         trainer = Trainer(
             model=model,
             train_dataset=train_dataset,
@@ -69,91 +81,39 @@ def run_experiment(dataset_path, output_path, config):
             loss_fn=loss_fn,
             output_path=output_model_path,
             device=device,
-            k_folds=current_config["k_folds"],
+            k_folds=config["k_folds"],
         )
 
         # Train the model
-        trainer.train(num_epochs=current_config["num_epochs"], 
-                     batch_size=current_config["batch_size"], 
+        trainer.train(num_epochs=config["num_epochs"], 
+                     batch_size=config["batch_size"], 
                      log_interval=50)
 
 def main(args):
-    # Experiment configurations
-    experiments = [
-        {
-            "model_name": "k3fold_epoch50_es_adam_lr1e-3_celoss_b128.pth",
-            "batch_size": 128,
-            "num_epochs": 50,
-            "k_folds": 3,
-            "optimizer": {
-                "name": "Adam",
-                "params": {
-                    "lr": 1e-3,
-                },
-            },
-            "loss": {
-                "name": "CrossEntropyLoss",
-                "params": {}
-            },
-        },
-        {
-            "model_name": "k3fold_epoch50_es_adam_lr1e-3_celoss_b128_vrotation.pth",
-            "batch_size": 128,
-            "num_epochs": 50,
-            "k_folds": 3,
-            "optimizer": {
-                "name": "Adam",
-                "params": {
-                    "lr": 1e-3,
-                },
-            },
-            "loss": {
-                "name": "CrossEntropyLoss",
-                "params": {}
-            },
-            "dataset_mode": "v_rotate",
-        },
-        {
-            "model_name": "k3fold_epoch50_es_SGD-3_celoss_b128_vrotation.pth",
-            "batch_size": 128,
-            "num_epochs": 200,
-            "k_folds": 3,
-            "optimizer": {
-                "name": "SGD",
-                "params": {
-                    "lr": 1e-3,
-                },
-            },
-            "loss": {
-                "name": "CrossEntropyLoss",
-                "params": {}
-            },
-            "dataset_mode": "v_rotate",
-        },
-        {
-            "model_name": "k3fold_epoch50_es_SGD-3_celoss_b128.pth",
-            "batch_size": 128,
-            "num_epochs": 200,
-            "k_folds": 3,
-            "optimizer": {
-                "name": "SGD",
-                "params": {
-                    "lr": 1e-3,
-                },
-            },
-            "loss": {
-                "name": "CrossEntropyLoss",
-                "params": {}
-            },
-        },
-        # Add more configurations as needed
-    ]
+    # Define parameter grid for grid search
+    param_grid = {
+        "batch_size": [32, 64, 128, 256],
+        "num_epochs": [50, 100, 150, 200],
+        "k_folds": [3, 4, 5, 6],
+        "optimizer": [
+            {"name": "Adam", "params": {"lr": lr}} for lr in [1e-3, 5e-4, 1e-4]
+        ],
+        "loss": [
+            {"name": "CrossEntropyLoss", "params": {}},
+            {"name": "NLLLoss", "params": {}}
+        ],
+        "dataset_mode": [None, "v_rotate", "full_rotate", "augmented"]
+    }
+
+    # Generate all combinations of parameters
+    keys, values = zip(*param_grid.items())
+    experiment_configs = [dict(zip(keys, v)) for v in itertools.product(*values)]
 
     # Ensure output folder exists
     os.makedirs(args.output_path, exist_ok=True)
 
     # Run each experiment
-    for config in experiments:
+    for config in experiment_configs:
         run_experiment(args.dataset_path, args.output_path, config)
 
 if __name__ == "__main__":
