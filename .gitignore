@@ -1,3 +1,3 @@
 venv/
-ModelNet40Voxel/
+ModelNet40Voxel*/
 *__pycache__*
