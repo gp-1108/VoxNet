@@ -1,3 +1,4 @@
 venv/
 ModelNet40Voxel*/
 *__pycache__*
+plots_extraction/runs/
