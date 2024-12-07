@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 import zstandard as zstd
 import pickle
 import numpy as np
+from collections import defaultdict
 
 class ModelNet40Dataset(Dataset):
     def __init__(self, root_dir, split='train', transform=None):
@@ -105,3 +106,9 @@ class ModelNet40Dataset(Dataset):
                 rotated_grid = np.rot90(voxel_grid, i, axes=axes).copy()
                 rotated_grids.append(rotated_grid)
         return rotated_grids
+    
+    def get_occurrences(self):
+        occurrences = defaultdict(int)
+        for _, target in self.samples:
+            occurrences[target] += 1
+        return occurrences
