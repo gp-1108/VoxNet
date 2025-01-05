@@ -1,0 +1,57 @@
+digraph {
+	graph [rankdir=TB splines=ortho]
+	node [fillcolor=lightblue shape=record style=filled]
+	input [label="Input (1x64x64x64)"]
+	conv1 [label="Conv3d(1 -> 30, k=7, s=2)
+BN3d
+ReLU"]
+	res1 [label="ResVoxBlock(30)" fillcolor=lightyellow shape=ellipse]
+	res2 [label="ResVoxBlock(30)" fillcolor=lightyellow shape=ellipse]
+	res3 [label="ResVoxBlock(30)" fillcolor=lightyellow shape=ellipse]
+	conv2 [label="Conv3d(30 -> 60, k=3, s=2)
+BN3d
+ReLU"]
+	res4 [label="ResVoxBlock(60)" fillcolor=lightyellow shape=ellipse]
+	res5 [label="ResVoxBlock(60)" fillcolor=lightyellow shape=ellipse]
+	res6 [label="ResVoxBlock(60)" fillcolor=lightyellow shape=ellipse]
+	res7 [label="ResVoxBlock(60)" fillcolor=lightyellow shape=ellipse]
+	res8 [label="ResVoxBlock(60)" fillcolor=lightyellow shape=ellipse]
+	conv3 [label="Conv3d(60 -> 120, k=3, s=2)
+BN3d
+ReLU"]
+	res9 [label="ResVoxBlock(120)" fillcolor=lightyellow shape=ellipse]
+	res10 [label="ResVoxBlock(120)" fillcolor=lightyellow shape=ellipse]
+	res11 [label="ResVoxBlock(120)" fillcolor=lightyellow shape=ellipse]
+	res12 [label="ResVoxBlock(120)" fillcolor=lightyellow shape=ellipse]
+	res13 [label="ResVoxBlock(120)" fillcolor=lightyellow shape=ellipse]
+	res14 [label="ResVoxBlock(120)" fillcolor=lightyellow shape=ellipse]
+	res15 [label="ResVoxBlock(120)" fillcolor=lightyellow shape=ellipse]
+	res16 [label="ResVoxBlock(120)" fillcolor=lightyellow shape=ellipse]
+	pool [label="AvgPool3d(k=3, s=2)"]
+	fc1 [label="Linear(3240 -> 512)
+ReLU
+Dropout"]
+	fc2 [label="Linear(512 -> n_classes)"]
+	input -> conv1
+	conv1 -> res1
+	res1 -> res2
+	res2 -> res3
+	res3 -> conv2
+	conv2 -> res4
+	res4 -> res5
+	res5 -> res6
+	res6 -> res7
+	res7 -> res8
+	res8 -> conv3
+	conv3 -> res9
+	res9 -> res10
+	res10 -> res11
+	res11 -> res12
+	res12 -> res13
+	res13 -> res14
+	res14 -> res15
+	res15 -> res16
+	res16 -> pool
+	pool -> fc1
+	fc1 -> fc2
+}
