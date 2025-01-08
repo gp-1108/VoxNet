@@ -3,8 +3,10 @@ import itertools
 import argparse
 import torch
 from Dataset import ModelNet40Dataset
-from models import BaseVoxNet, BatchNormVoxNet, ResVoxNet, ResBNVoxNet
+from models import BaseVoxNet, BatchNormVoxNet, ResVoxNet, ResBNVoxNet, ResBNVox64Net, ResVox64Net
+from CustomFocalLoss import CustomFocalLoss
 from Trainer import Trainer
+import sys
 
 def get_instance(class_name, module, **kwargs):
     """
@@ -27,6 +29,7 @@ def generate_model_name(config, model_type):
     return f"{model_type}_bs{batch_size}_epochs{num_epochs}_{optimizer_name}_lr{lr:.0e}_{loss_name}_{dataset_mode}.pth"
 
 def run_experiment(dataset_path, output_path, config):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     """
     Runs a single experiment based on the given configuration.
     """
@@ -44,10 +47,12 @@ def run_experiment(dataset_path, output_path, config):
     n_classes = len(train_dataset.get_class_mapping())
     # Test each model type
     model_types = {
-        'base': BaseVoxNet,
-        'batchnorm': BatchNormVoxNet,
-        'res': ResVoxNet,
-        'resbn': ResBNVoxNet,
+        # 'base': BaseVoxNet,
+        # 'batchnorm': BatchNormVoxNet,
+        # 'res': ResVoxNet,
+        # 'resbn': ResBNVoxNet,
+        # 'resbn64': ResBNVox64Net,
+        'res64': ResVox64Net,
     }
 
     for model_type, model_class in model_types.items():
@@ -64,14 +69,16 @@ def run_experiment(dataset_path, output_path, config):
             params=model.parameters(),
             **config["optimizer"]["params"]
         )
-        loss_fn = get_instance(
-            config["loss"]["name"],
-            torch.nn,
-            **config["loss"].get("params", {})
-        )
+        if config["loss"]["name"] == "CustomFocalLoss":
+            loss_fn = CustomFocalLoss(**config["loss"].get("params", {}), occurences=train_dataset.get_occurrences(), device=device)
+        else:
+            loss_fn = get_instance(
+                config["loss"]["name"],
+                torch.nn,
+                **config["loss"].get("params", {})
+            )
 
         # Define device and Trainer
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         output_model_path = os.path.join(output_path, model_name)
         trainer = Trainer(
             model=model,
@@ -85,24 +92,23 @@ def run_experiment(dataset_path, output_path, config):
         )
 
         # Train the model
-        trainer.train(num_epochs=config["num_epochs"], 
-                     batch_size=config["batch_size"], 
+        trainer.train(num_epochs=config["num_epochs"],
+                     batch_size=config["batch_size"],
                      log_interval=50)
 
 def main(args):
     # Define parameter grid for grid search
     param_grid = {
-        "batch_size": [32, 64, 128, 256],
-        "num_epochs": [50, 100, 150, 200],
-        "k_folds": [3, 4, 5, 6],
+        "batch_size": [256],
+        "num_epochs": [200],
+        "k_folds": [3],
         "optimizer": [
-            {"name": "Adam", "params": {"lr": lr}} for lr in [1e-3, 5e-4, 1e-4]
+            {"name": "Adam", "params": {"lr": lr}} for lr in [1e-3]
         ],
         "loss": [
             {"name": "CrossEntropyLoss", "params": {}},
-            {"name": "NLLLoss", "params": {}}
         ],
-        "dataset_mode": [None, "v_rotate", "full_rotate", "augmented"]
+        "dataset_mode": ["full_rotate"]
     }
 
     # Generate all combinations of parameters
