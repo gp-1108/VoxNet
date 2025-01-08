@@ -1,0 +1,9 @@
+graphviz==0.20.3
+matplotlib==3.10.0
+numpy==2.2.1
+scikit_learn==1.6.0
+scipy==1.15.0
+torch==2.5.1+cpu
+tqdm==4.67.1
+trimesh==4.5.3
+zstandard==0.23.0
