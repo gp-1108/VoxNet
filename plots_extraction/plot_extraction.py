@@ -1,7 +1,13 @@
 import os
 import re
+import json
 import matplotlib.pyplot as plt
 import numpy as np
+import argparse
+
+# Define consistent colors for training and validation
+TRAIN_COLOR = "blue"
+VAL_COLOR = "orange"
 
 # Function to parse the log file
 def parse_log(file_path):
@@ -11,7 +17,6 @@ def parse_log(file_path):
     num_model = 0
     with open(file_path, 'r') as f:
         for line in f:
-
             # Detect the start of a new training run
             if "Running experiment with config" in line:
                 current_fold = None
@@ -55,15 +60,22 @@ def parse_log(file_path):
     
     return results
 
+# Function to save results as JSON
+def save_results_as_json(results, save_dir):
+    for model, folds in results.items():
+        model_save_path = os.path.join(save_dir, f"{model}_results.json")
+        with open(model_save_path, 'w') as f:
+            json.dump({fold: data for fold, data in folds.items()}, f, indent=4)
+    print(f"Results have been saved as JSON files in {save_dir}")
+
 # Function to plot and save learning curves
 def save_learning_curves(results, save_dir):
     for model, folds in results.items():
         for fold, data in folds.items():
             epochs = np.arange(1, len(data["train_loss"]) + 1)
             plt.figure(figsize=(10, 6))
-            plt.plot(epochs, data["train_loss"], label="Training Loss")
-            plt.plot(epochs, data["val_loss"], label="Validation Loss")
-            plt.title(f"Learning Curves (Model: {model}, Fold {fold})")
+            plt.plot(epochs, data["train_loss"], label="Training Loss", color=TRAIN_COLOR)
+            plt.plot(epochs, data["val_loss"], label="Validation Loss", color=VAL_COLOR)
             plt.xlabel("Epochs")
             plt.ylabel("Loss")
             plt.legend()
@@ -78,9 +90,8 @@ def save_accuracy_progression(results, save_dir):
         for fold, data in folds.items():
             epochs = np.arange(1, len(data["train_acc"]) + 1)
             plt.figure(figsize=(10, 6))
-            plt.plot(epochs, data["train_acc"], label="Training Accuracy")
-            plt.plot(epochs, data["val_acc"], label="Validation Accuracy")
-            plt.title(f"Accuracy Progression (Model: {model}, Fold {fold})")
+            plt.plot(epochs, data["train_acc"], label="Training Accuracy", color=TRAIN_COLOR)
+            plt.plot(epochs, data["val_acc"], label="Validation Accuracy", color=VAL_COLOR)
             plt.xlabel("Epochs")
             plt.ylabel("Accuracy (%)")
             plt.legend()
@@ -89,27 +100,7 @@ def save_accuracy_progression(results, save_dir):
             plt.savefig(fold_save_path)
             plt.close()
 
-# # Function to plot and save box plot for cross-validation results
-# def save_cross_validation_boxplot(results, save_dir):
-#     for model, folds in results.items():
-#         # Collect validation accuracies for folds that have data
-#         val_accs = [
-#             data["val_acc"][-1] for data in folds.values() if data["val_acc"]
-#         ]
-#         if not val_accs:
-#             print(f"Skipping box plot for model '{model}' as no validation accuracy data is available.")
-#             continue  # Skip if no validation accuracies are available
-
-#         plt.figure(figsize=(10, 6))
-#         plt.boxplot(val_accs, labels=[f"Fold {fold}" for fold, data in folds.items() if data["val_acc"]])
-#         plt.title(f"Cross-Validation Validation Accuracies (Model: {model})")
-#         plt.ylabel("Accuracy (%)")
-#         plt.grid()
-#         boxplot_save_path = os.path.join(save_dir, f"{model}_cross_validation_boxplot.png")
-#         plt.savefig(boxplot_save_path)
-#         plt.close()
-
-# Function to combine folds into a single plot
+# Function to combine folds into a single plot and place them side by side
 def save_combined_plots(results, save_dir):
     for model, folds in results.items():
         # Initialize combined data
@@ -128,49 +119,57 @@ def save_combined_plots(results, save_dir):
             combined_val_acc.extend(data["val_acc"])
             fold_separators.append(len(combined_train_loss))  # Mark where this fold ends
 
-        # Plot combined learning curves
+        # Plot combined learning curves and accuracy progression side by side
         epochs = np.arange(1, len(combined_train_loss) + 1)
-        plt.figure(figsize=(12, 8))
-        plt.plot(epochs, combined_train_loss, label="Training Loss", color="blue")
-        plt.plot(epochs, combined_val_loss, label="Validation Loss", color="orange")
-        for sep in fold_separators:
-            plt.axvline(sep, color="red", linestyle="--", linewidth=1)
-        plt.title(f"Combined Learning Curves (Model: {model})")
-        plt.xlabel("Epochs")
-        plt.ylabel("Loss")
-        plt.legend()
-        plt.grid()
-        combined_loss_save_path = os.path.join(save_dir, f"{model}_combined_learning_curves.png")
-        plt.savefig(combined_loss_save_path)
-        plt.close()
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
 
-        # Plot combined accuracy progression
-        plt.figure(figsize=(12, 8))
-        plt.plot(epochs, combined_train_acc, label="Training Accuracy", color="green")
-        plt.plot(epochs, combined_val_acc, label="Validation Accuracy", color="purple")
+        # Plot Learning Curves on ax1
+        ax1.plot(epochs, combined_train_loss, label="Training Loss", color=TRAIN_COLOR)
+        ax1.plot(epochs, combined_val_loss, label="Validation Loss", color=VAL_COLOR)
         for sep in fold_separators:
-            plt.axvline(sep, color="red", linestyle="--", linewidth=1)
-        plt.title(f"Combined Accuracy Progression (Model: {model})")
-        plt.xlabel("Epochs")
-        plt.ylabel("Accuracy (%)")
-        plt.legend()
-        plt.grid()
-        combined_acc_save_path = os.path.join(save_dir, f"{model}_combined_accuracy_progression.png")
-        plt.savefig(combined_acc_save_path)
-        plt.close()
+            ax1.axvline(sep, color="red", linestyle="--", linewidth=1)
+        ax1.set_xlabel("Epochs")
+        ax1.set_ylabel("Loss")
+        ax1.legend()
+        ax1.grid()
 
+        # Plot Accuracy Progression on ax2
+        ax2.plot(epochs, combined_train_acc, label="Training Accuracy", color=TRAIN_COLOR)
+        ax2.plot(epochs, combined_val_acc, label="Validation Accuracy", color=VAL_COLOR)
+        for sep in fold_separators:
+            ax2.axvline(sep, color="red", linestyle="--", linewidth=1)
+        ax2.set_xlabel("Epochs")
+        ax2.set_ylabel("Accuracy (%)")
+        ax2.legend()
+        ax2.grid()
+
+        # Save the combined figure
+        combined_save_path = os.path.join(save_dir, f"{model}_combined_learning_and_accuracy.png")
+        plt.tight_layout()
+        plt.savefig(combined_save_path)
+        plt.close()
 
 # Main script
 def main():
-    NUM_RUN = "01" # XX format (g.e. 01, 02, 03, ...)
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Process and visualize training logs.")
+    parser.add_argument("run_number", type=str, help="Run number in XX format (e.g., 01, 02, 03, ...)")
+    args = parser.parse_args()
+
+    NUM_RUN = args.run_number
     file_path = f"./runs/run_{NUM_RUN}/output.txt"  # Replace with your file path
     save_dir_learning_curves = f"./runs/run_{NUM_RUN}/plots/learning_curves"
     save_dir_accuracy_progression = f"./runs/run_{NUM_RUN}/plots/accuracy_progression"
     save_dir_combined_plots = f"./runs/run_{NUM_RUN}/plots/combined_plots"
-    os.makedirs(save_dir_learning_curves, exist_ok=True)  # Create the directory if it doesn't exist
+    save_dir_data = f"./runs/run_{NUM_RUN}/results"  # New directory to save parsed data
+
+    # Create necessary directories
+    os.makedirs(save_dir_learning_curves, exist_ok=True)
     os.makedirs(save_dir_accuracy_progression, exist_ok=True)
     os.makedirs(save_dir_combined_plots, exist_ok=True)
+    os.makedirs(save_dir_data, exist_ok=True)
 
+    # Parse log file
     results = parse_log(file_path)
 
     # Save plots
@@ -178,7 +177,10 @@ def main():
     save_accuracy_progression(results, save_dir_accuracy_progression)
     save_combined_plots(results, save_dir_combined_plots)
 
-    print(f"All plots have been saved")
+    # Save parsed results as a JSON file
+    save_results_as_json(results, save_dir_data)
+
+    print(f"All plots and data have been saved.")
 
 if __name__ == "__main__":
     main()
