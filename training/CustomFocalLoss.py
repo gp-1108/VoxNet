@@ -3,10 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class CustomFocalLoss(nn.Module):
-    def __init__(self, gamma=2, occurences: dict = None, mode="mean"):
+    def __init__(self, gamma=2, occurences: dict = None, mode="mean", device=torch.device("cpu")):
         super(CustomFocalLoss, self).__init__()
         self.gamma = gamma
         self.occurences = occurences
+        self.mode = mode
+        self.device = device
 
         # Computing the alpha values
         total_size = sum(occurences.values())
@@ -15,6 +17,7 @@ class CustomFocalLoss(nn.Module):
             [self.alpha[k] for k in sorted(self.alpha.keys())],
             dtype=torch.float32
         )  # Create a tensor for alpha values in class order
+        self.alpha_tensor = self.alpha_tensor.to(self.device)
         if self.mode not in ["mean", "sum", "none"]:
             raise ValueError("mode must be one of 'mean', 'sum', or 'none'")
 
